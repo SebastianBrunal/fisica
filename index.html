@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulador de Gasto Energético — Sebastián</title>
+
+  <!-- Tailwind (utilidades rápidas y responsive) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- html2canvas + jsPDF -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg: linear-gradient(135deg,#f3dded 0%, #e2e2e2 100%);
+      --card: rgba(255,255,255,0.82);
+      --accent: #6b21a8;
+      --accent-2: #e2e2e2;
+      --muted: #6b7280;
+      --glass-border: rgba(107,33,168,0.10);
+      --text: #111827;
+    }
+    [data-theme="dark"]{
+      --card: rgba(7,10,20,0.78);
+      --text: #e6eef8;
+      --muted: #9aa7c1;
+      --glass-border: rgba(255,255,255,0.04);
+      --bg: linear-gradient(135deg,#0b1222 0%, #2b0b3a 100%);
+    }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      padding:20px;
+      transition: background 300ms ease, color 300ms ease;
+    }
+    .card{
+      background: var(--card);
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 8px 20px rgba(15,15,30,0.05);
+      padding:16px;
+    }
+    .accent { color: var(--accent); }
+    .btn-primary { background: linear-gradient(90deg,var(--accent), #8b5cf6); color: #fff; }
+    input, select, textarea { border:1px solid rgba(15,15,30,0.06); background: #fbfbff; padding:8px; border-radius:8px; }
+    .muted { color: var(--muted); }
+    .small { font-size:0.92rem; }
+    .no-dec { font-weight:700; font-size:1.05rem; }
+    .preset-btn { background:#fff; border:1px solid rgba(15,15,30,0.06); padding:8px 10px; border-radius:8px; cursor:pointer; }
+    .preset-btn:hover{ transform:translateY(-2px); transition: all 120ms ease; }
+    a { color:var(--accent); text-decoration:underline; }
+    footer { text-align:center; color:var(--muted); font-size:0.9rem; margin-top:18px; }
+
+    /* ===== RESPONSIVE IMPROVEMENTS ===== */
+    .grid-3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; }
+    .grid-2 { display:grid; grid-template-columns: repeat(2, 1fr); gap:1rem; }
+
+    @media (max-width: 1100px){
+      .grid-3 { grid-template-columns: repeat(2,1fr); }
+    }
+    @media (max-width: 768px){
+      body { padding:14px; }
+      .grid-3, .grid-2 { grid-template-columns: 1fr !important; }
+      header .flex { flex-direction:column; gap:12px; align-items:flex-start; }
+      .card { padding:12px; border-radius:10px; }
+      .no-dec { font-size:1rem; }
+      .preset-btn { padding:10px; width:100%; }
+      .muted.small, .small { font-size:0.9rem; }
+      .btn-primary { width:100%; padding:12px; }
+    }
+    @media (max-width: 420px){
+      header h1 { font-size:1.2rem; }
+      footer { font-size:0.8rem; }
+      input, select, textarea { font-size:0.95rem; padding:10px; }
+    }
+
+    /* Make canvases flexible */
+    .chart-container { width:100%; }
+    canvas { max-width:100% !important; height:auto !important; }
+
+    /* Accessibility: focus */
+    input:focus, select:focus, button:focus { outline: 3px solid rgba(99,102,241,0.12); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div class="max-w-6xl mx-auto">
+    <header class="mb-6">
+      <div class="flex items-start gap-4 md:items-center">
+        <div class="flex-1">
+          <h1 class="text-2xl md:text-3xl font-extrabold accent">🏃 Simulador de Gasto Energético — Sebastián</h1>
+          <p class="mt-1 muted small">Física mecánica — Energía mecánica (J), energía química (kcal), desglose, gráficas e informe.</p>
+        </div>
+
+        <div class="ml-auto flex gap-2 items-center">
+          <label class="small muted mr-2">Paleta</label>
+          <select id="palette" class="p-2 rounded border">
+            <option value="violeta">Violeta / Dorado</option>
+            <option value="azul">Azul / Naranja</option>
+            <option value="verde">Verde / Azul</option>
+          </select>
+          <button id="toggleDark" aria-label="Alternar tema" class="px-3 py-2 rounded border">🌙 / ☀️</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- FORM -->
+    <section class="card p-4 mb-6">
+      <form id="mainForm" onsubmit="event.preventDefault()" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-3 gap-4">
+          <input id="nombre" placeholder="Nombre (opcional)" class="p-3 rounded-md w-full" />
+          <select id="sexo" class="p-3 rounded-md w-full">
+            <option value="">Sexo (opcional)</option>
+            <option value="M">Masculino</option>
+            <option value="F">Femenino</option>
+          </select>
+
+          <input id="edad" type="number" min="1" placeholder="Edad (años)" class="p-3 rounded-md w-full" />
+          <input id="altura" type="number" min="0.5" step="0.01" placeholder="Altura (m)" class="p-3 rounded-md w-full" />
+
+          <input id="masa" type="number" min="1" step="0.1" placeholder="Masa (kg)" class="p-3 rounded-md w-full" />
+          <select id="actividad" class="p-3 rounded-md w-full">
+            <option value="">Actividad (seleccionar)</option>
+            <option value="caminar">Caminar</option>
+            <option value="subir_escaleras">Subir escaleras</option>
+            <option value="correr">Correr / Acelerar</option>
+            <option value="bicicleta">Bicicleta</option>
+            <option value="otro">Otro (usar distancia/tiempo)</option>
+          </select>
+
+          <input id="tiempo" type="number" min="0" step="0.1" placeholder="Tiempo (min)" class="p-3 rounded-md w-full" />
+          <input id="distancia" type="number" min="0" step="0.1" placeholder="Distancia (m)" class="p-3 rounded-md w-full" />
+
+          <input id="altura_desplazada" type="number" min="0" step="0.01" placeholder="Altura desplazada (m)" class="p-3 rounded-md w-full" />
+          <input id="perdida_friccion" type="number" min="0" step="0.1" placeholder="Pérdida por fricción (%)" class="p-3 rounded-md w-full" />
+
+          <input id="v0" type="number" min="0" step="0.1" placeholder="Velocidad inicial (km/h)" class="p-3 rounded-md w-full" />
+          <input id="v1" type="number" min="0" step="0.1" placeholder="Velocidad final (km/h)" class="p-3 rounded-md w-full" />
+
+          <input id="coef_fr" type="number" min="0" step="0.001" placeholder="Coef. fricción μ (ej. 0.04)" class="p-3 rounded-md w-full" />
+          <select id="alimento" class="p-3 rounded-md w-full">
+            <option value="">Alimento ingerido (opcional)</option>
+            <option value="ninguno">Ninguno</option>
+            <option value="banana_100">Banana ~ 89 kcal (100 g)</option>
+            <option value="manzana_100">Manzana ~ 52 kcal (100 g)</option>
+            <option value="pan_100">Pan ~ 265 kcal (100 g)</option>
+            <option value="pizza_100">Pizza ~ 266 kcal (100 g)</option>
+          </select>
+
+          <input id="eficiencia" type="number" min="0.05" max="1" step="0.01" placeholder="Eficiencia muscular (η)" value="0.25" class="p-3 rounded-md w-full" />
+          <input id="g" type="number" min="1" step="0.01" placeholder="Gravedad (m/s²)" value="9.81" class="p-3 rounded-md w-full" />
+        </div>
+
+        <div class="mt-2 flex flex-col sm:flex-row gap-2">
+          <button type="button" onclick="calcularTodo()" class="btn-primary px-4 py-2 rounded-md shadow-soft">Calcular Energía</button>
+          <button type="button" onclick="agregarRegistro()" class="px-4 py-2 rounded-md border">Guardar registro</button>
+          <button type="button" onclick="descargarCSV()" class="px-4 py-2 rounded-md border">Descargar CSV</button>
+          <button type="button" onclick="exportPDF()" class="px-4 py-2 rounded-md border">Exportar Informe (PDF)</button>
+          <button type="button" onclick="guardarLocal()" class="px-4 py-2 rounded-md border">Guardar historial</button>
+          <button type="button" onclick="cargarLocal()" class="px-4 py-2 rounded-md border">Cargar historial</button>
+          <button type="button" onclick="borrarLocal()" class="px-4 py-2 rounded-md border">Borrar historial</button>
+          <button type="button" onclick="preset('reiniciar')" class="px-4 py-2 rounded-md border">Limpiar</button>
+        </div>
+
+        <!-- Presets rápidos -->
+        <div class="mt-4 border-t pt-4">
+          <h3 class="text-lg font-semibold accent mb-2">⚙️ Llenado rápido</h3>
+          <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
+            <button type="button" class="preset-btn" onclick="preset('caminar')">Caminar 30 min</button>
+            <button type="button" class="preset-btn" onclick="preset('correr')">Correr 20 min</button>
+            <button type="button" class="preset-btn" onclick="preset('bicicleta')">Bicicleta 40 min</button>
+            <button type="button" class="preset-btn" onclick="preset('subir')">Subir escaleras 3 m</button>
+            <button type="button" class="preset-btn" onclick="preset('sentadillas')">Sentadillas 5 min</button>
+            <button type="button" class="preset-btn" onclick="preset('pesas')">Pesas 15 min</button>
+            <button type="button" class="preset-btn bg-yellow-50" onclick="registrarTodos()">📥 Registrar todos</button>
+            <button type="button" class="preset-btn bg-gray-100" onclick="preset('reiniciar')">🔄 Reiniciar</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- ANALISIS GENERAL -->
+    <section class="card p-4 mb-6">
+      <h2 class="text-lg font-semibold" style="color:var(--accent-2)">📊 Análisis General</h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        <div>
+          <div class="muted small">Eficiencia muscular (η)</div>
+          <div id="display_eficiencia" class="no-dec">—</div>
+        </div>
+        <div>
+          <div class="muted small">Energía mecánica (J)</div>
+          <div id="display_E_mec" class="no-dec">—</div>
+        </div>
+        <div>
+          <div class="muted small">Energía requerida (kcal)</div>
+          <div id="display_req_kcal" class="no-dec">—</div>
+        </div>
+      </div>
+
+      <div class="mt-4 chart-container">
+        <canvas id="chartLine"></canvas>
+      </div>
+
+      <div class="mt-4 chart-container">
+        <canvas id="chartBar"></canvas>
+      </div>
+
+      <div class="mt-4 chart-container">
+        <canvas id="activityChart"></canvas>
+      </div>
+
+      <div class="mt-4 flex flex-col sm:flex-row gap-3">
+        <button type="button" onclick="exportChart('line')" class="px-3 py-2 rounded-md border">Exportar línea PNG</button>
+        <button type="button" onclick="exportChart('bar')" class="px-3 py-2 rounded-md border">Exportar barras PNG</button>
+        <div id="reg_count" class="muted ml-auto">Registros: 0</div>
+      </div>
+    </section>
+
+    <!-- DESGLOSE -->
+    <section class="card p-4 mb-6">
+      <h2 class="text-lg font-semibold accent">🧾 Desglose Energético</h2>
+      <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <div class="overflow-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr><th class="text-left">Tipo</th><th class="text-left">E (J)</th><th class="text-left">E (kcal)</th><th class="text-left">% del total</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Ep (potencial)</td><td id="ep_j">—</td><td id="ep_kcal">—</td><td id="ep_pct">—</td></tr>
+                <tr><td>Fricción / rozamiento</td><td id="fr_j">—</td><td id="fr_kcal">—</td><td id="fr_pct">—</td></tr>
+                <tr><td>ΔEk (aceleración)</td><td id="ek_j">—</td><td id="ek_kcal">—</td><td id="ek_pct">—</td></tr>
+                <tr style="font-weight:700"><td>Total mecánica</td><td id="total_j">—</td><td id="total_kcal">—</td><td>100%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="muted small">Equivalencia con alimento (req. química)</div>
+          <div id="food_equiv" class="no-dec mt-2">—</div>
+
+          <div class="mt-4 muted small">Historial rápido</div>
+          <div id="hist_fast" class="mt-2 small muted p-3 bg-gray-50 rounded-md" style="min-height:100px; white-space:pre-wrap;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRACTICAS / DETALLE -->
+    <section class="card p-4 mb-12">
+      <h2 class="text-lg font-semibold accent">✍️ Prácticas y Detalle</h2>
+      <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="font-semibold">Ejemplo resuelto: Subir 3 m</h3>
+          <button class="mt-2 px-3 py-2 rounded-md btn-primary" onclick="ejemploSubir3m()">Mostrar solución</button>
+          <pre id="sol_example" class="mt-2 small muted p-3 bg-gray-50 rounded-md" style="white-space:pre-wrap;"></pre>
+        </div>
+
+        <div>
+          <h3 class="font-semibold">Práctica aleatoria</h3>
+          <button class="mt-2 px-3 py-2 rounded-md btn-primary" onclick="generarPractica()">Generar práctica</button>
+          <div id="practice_area" class="mt-2 small muted p-3 bg-gray-50 rounded-md"></div>
+          <input id="practice_answer" class="mt-2 p-2 rounded-md w-full" placeholder="Tu respuesta (kcal)" type="number" step="0.01" />
+          <div class="flex gap-2 mt-2">
+            <button onclick="comprobarPractica()" class="px-3 py-2 rounded-md border">Comprobar</button>
+            <button onclick="mostrarSolPractica()" class="px-3 py-2 rounded-md border">Mostrar solución</button>
+          </div>
+          <div id="practice_feedback" class="mt-2 small muted"></div>
+        </div>
+      </div>
+
+      <h3 class="mt-4 font-semibold">Detalle de Cálculos (paso a paso)</h3>
+      <pre id="detalle" class="mt-3 small muted p-4 bg-gray-50 rounded-md" style="white-space:pre-wrap; min-height:120px"></pre>
+    </section>
+
+    <!-- DEFINICIONES y CREDITOS -->
+    <section class="card p-4 mb-6">
+      <h2 class="text-lg font-semibold accent">📘 Definiciones Clave</h2>
+      <ul class="mt-3 list-disc pl-6">
+        <li><strong>Energía mecánica (E):</strong> suma de energía potencial y energía cinética de un cuerpo. Unidad: J (julio).</li>
+        <li><strong>Trabajo (W):</strong> producto de la fuerza por el desplazamiento en la dirección de la fuerza: \(W = F \cdot d\).</li>
+        <li><strong>Energía potencial gravitatoria (Ep):</strong> \(E_p = m g h\).</li>
+        <li><strong>Energía cinética (Ek):</strong> \(E_k = \tfrac{1}{2} m v^2\).</li>
+        <li><strong>Potencia (P):</strong> trabajo por unidad de tiempo: \(P = \dfrac{W}{t}\).</li>
+        <li><strong>Eficiencia (η):</strong> fracción entre energía mecánica útil y la energía química consumida por el cuerpo.</li>
+      </ul>
+    </section>
+
+    <footer class="card p-4">
+      <div class="text-center">
+        <p class="font-semibold">Proyecto: Simulador de Gasto Energético Humano</p>
+        <p>Autores: Valentina Martínez · Sara Vargas · Juan Calvo · Sebastián Brunal · Simón Valencia</p>
+        <p class="muted">Año: 2025 — Hecho para el trabajo final de Física Mecánica</p>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // ---------- UTILIDADES ----------
+    function safeNum(v, fallback=0){ const x = Number(String(v).replace(',', '.')); return isFinite(x) ? x : fallback; }
+    function roundInt(n){ return Math.round(n); }
+    function JtoKcal(J){ return J / 4184; }
+    function kcalToJ(k){ return k * 4184; }
+    function kmh_to_ms(v){ return v * 1000 / 3600; }
+
+    // ---------- ESTADO ----------
+    let registros = JSON.parse(localStorage.getItem('sim_registros_final') || '[]');
+    let currentPractice = null;
+    let ultimoCalculo = null;
+
+    // ---------- PALETA / DARK ----------
+    const paletteSelect = document.getElementById('palette');
+    const toggleDarkBtn = document.getElementById('toggleDark');
+    function applyPalette(p){
+      if(p === 'violeta'){
+        document.documentElement.style.setProperty('--accent','#6b21a8');
+        document.documentElement.style.setProperty('--accent-2','#f59e0b');
+      } else if(p === 'azul'){
+        document.documentElement.style.setProperty('--accent','#0ea5e9');
+        document.documentElement.style.setProperty('--accent-2','#fb923c');
+      } else {
+        document.documentElement.style.setProperty('--accent','#059669');
+        document.documentElement.style.setProperty('--accent-2','#06b6d4');
+      }
+      // update inline accent colors if needed
+      document.querySelectorAll('.accent').forEach(el => el.style.color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+    }
+    applyPalette('violeta');
+    paletteSelect.onchange = e => applyPalette(e.target.value);
+    toggleDarkBtn.onclick = ()=> {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if(isDark) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme','dark');
+    };
+
+    // ---------- CHARTS ----------
+    let lineChart, barChart, activityChart;
+    function initCharts(){
+      const ctx1 = document.getElementById('chartLine').getContext('2d');
+      lineChart = new Chart(ctx1, {
+        type: 'line',
+        data: { labels: [], datasets: [{ label:'Gasto acumulado (kcal)', data: [], fill:true, tension:0.25, borderColor: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#6b21a8', backgroundColor:'rgba(124,58,237,0.12)', pointRadius:4 }]},
+        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:true }, tooltip:{ mode:'index', intersect:false } }, scales:{ x:{ ticks:{ color:'#334155' } }, y:{ ticks:{ color:'#334155' } } }
+      }});
+
+      const ctx2 = document.getElementById('chartBar').getContext('2d');
+      barChart = new Chart(ctx2, {
+        type:'bar',
+        data:{ labels:[], datasets:[
+          { label:'Energía mecánica (kcal)', data:[], backgroundColor:'#60a5fa' },
+          { label:'Pérdidas / calor (kcal)', data:[], backgroundColor:'#f59e0b' }
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:true } }, scales:{ x:{ ticks:{ color:'#334155' } }, y:{ ticks:{ color:'#334155' } } }
+      }});
+
+      const ctx3 = document.getElementById('activityChart').getContext('2d');
+      activityChart = new Chart(ctx3, {
+        type:'bar',
+        data:{
+          labels:['Bailar','Bicicleta','Caminar','Ciclismo','Correr','Escalar','Fútbol','Natación','Yoga'],
+          datasets:[{ label:'Calorías promedio (kcal)', data: [0,0,0,0,0,0,0,0,0], backgroundColor: '#f59e0b', borderRadius:6 }]
+        },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:50 } } } }
+      });
+
+      // Make canvas containers have a fixed visual height on desktop but flexible on mobile
+      document.querySelectorAll('.chart-container').forEach((c,i)=>{
+        if(window.innerWidth > 900) c.style.height = i===2 ? '240px' : '180px';
+        else c.style.height = '220px';
+      });
+
+      actualizarCharts();
+    }
+
+    function actualizarCharts(){
+      const labels = registros.map((r,i)=> `${i+1}. ${r.tipo}`);
+      const accum = [];
+      let sum = 0;
+      for(const r of registros){ sum += (r.req_kcal || 0); accum.push(roundInt(sum)); }
+      lineChart.data.labels = labels;
+      lineChart.data.datasets[0].data = accum;
+      lineChart.update();
+
+      if(registros.length){
+        const show = registros.slice(-12);
+        barChart.data.labels = show.map((r,i)=> `${registros.length - show.length + i + 1}. ${r.tipo}`);
+        barChart.data.datasets[0].data = show.map(r => r.E_mec_kcal || 0);
+        barChart.data.datasets[1].data = show.map(r => Math.max(0, (r.req_kcal || 0) - (r.E_mec_kcal || 0)));
+      } else {
+        barChart.data.labels = [];
+        barChart.data.datasets[0].data = [];
+        barChart.data.datasets[1].data = [];
+      }
+      barChart.update();
+
+      document.getElementById('reg_count').innerText = 'Registros: ' + registros.length;
+      document.getElementById('hist_fast').innerText = registros.slice(-5).reverse().map((r,i)=> `${i+1}. ${r.tipo} — ${r.req_kcal} kcal`).join('\n') || 'Sin registros';
+
+      // actualizar activityChart (promedios por actividad)
+      const activities = ['Bailar','Bicicleta','Caminar','Ciclismo','Correr','Escalar','Fútbol','Natación','Yoga'];
+      const sums = Array(activities.length).fill(0);
+      const counts = Array(activities.length).fill(0);
+      for(const r of registros){
+        const name = (r.tipo || '').toLowerCase();
+        if(name.includes('bail')) { sums[0]+=r.req_kcal; counts[0]++; }
+        else if(name.includes('bic') || name.includes('bici')) { sums[1]+=r.req_kcal; counts[1]++; }
+        else if(name.includes('cam')) { sums[2]+=r.req_kcal; counts[2]++; }
+        else if(name.includes('cicl')) { sums[3]+=r.req_kcal; counts[3]++; }
+        else if(name.includes('corr')) { sums[4]+=r.req_kcal; counts[4]++; }
+        else if(name.includes('esca')) { sums[5]+=r.req_kcal; counts[5]++; }
+        else if(name.includes('fút') || name.includes('fut')) { sums[6]+=r.req_kcal; counts[6]++; }
+        else if(name.includes('nat')) { sums[7]+=r.req_kcal; counts[7]++; }
+        else if(name.includes('yog')) { sums[8]+=r.req_kcal; counts[8]++; }
+      }
+      const avgs = sums.map((s,i)=> counts[i] ? Math.round(s / counts[i]) : 0);
+      activityChart.data.datasets[0].data = avgs;
+      activityChart.update();
+    }
+
+    function exportChart(which){
+      const chart = which === 'line' ? lineChart : barChart;
+      if(!chart) return alert('Gráfica no lista.');
+      const url = chart.toBase64Image();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `grafica_${which}.png`;
+      a.click();
+    }
+
+    // ---------- CÁLCULOS ----------
+    function calcularTodo(){
+      // Leer entradas
+      const masa = safeNum(document.getElementById('masa').value, 70);
+      const eta = safeNum(document.getElementById('eficiencia').value, 0.25);
+      const g = safeNum(document.getElementById('g').value, 9.81);
+      const tipoActividad = document.getElementById('actividad').value || 'otro';
+      const tiempo_min = safeNum(document.getElementById('tiempo').value, 0);
+      const distancia_m = safeNum(document.getElementById('distancia').value, 0);
+      const h = safeNum(document.getElementById('altura_desplazada').value, 0);
+      const mu = safeNum(document.getElementById('coef_fr').value, 0.04);
+      const perdida_percent = safeNum(document.getElementById('perdida_friccion').value, 0);
+
+      // Desglose J
+      let Ep = 0, W = 0, deltaEk = 0;
+      if(h > 0){ Ep = masa * g * h; }
+      if(distancia_m > 0){ W = mu * masa * g * distancia_m; }
+      const v0_kmh = safeNum(document.getElementById('v0').value, 0);
+      const v1_kmh = safeNum(document.getElementById('v1').value, 0);
+      if(v1_kmh > 0){
+        const v0 = kmh_to_ms(v0_kmh);
+        const v1 = kmh_to_ms(v1_kmh);
+        const dEk = 0.5 * masa * (v1*v1 - v0*v0);
+        deltaEk = Math.max(0, dEk);
+      }
+
+      let E_mec_J = Ep + W + deltaEk;
+      if(perdida_percent > 0){ E_mec_J *= (1 + perdida_percent/100); }
+
+      const E_mec_kcal = JtoKcal(E_mec_J);
+      const req_chemical_J = (eta > 0) ? (E_mec_J / eta) : E_mec_J;
+      const req_kcal = JtoKcal(req_chemical_J);
+
+      // METs (estimación alternativa)
+      let met = null;
+      if(tipoActividad === 'caminar') met = 3.3;
+      else if(tipoActividad === 'correr') met = 8;
+      else if(tipoActividad === 'subir_escaleras') met = 8.8;
+      else if(tipoActividad === 'bicicleta') met = 6;
+      let kcal_met = null;
+      if(met && tiempo_min > 0) kcal_met = met * masa * (tiempo_min / 60);
+
+      // UI (sin decimales)
+      document.getElementById('display_eficiencia').innerText = Math.round(eta*100) + ' %';
+      document.getElementById('display_E_mec').innerText = roundInt(E_mec_J).toLocaleString() + ' J';
+      document.getElementById('display_req_kcal').innerText = roundInt(req_kcal) + ' kcal';
+
+      // Detalle
+      const detalleList = [];
+      if(Ep>0) detalleList.push(`Ep = m·g·h = ${masa}·${g}·${h} = ${roundInt(Ep)} J`);
+      if(W>0) detalleList.push(`W_fricción = μ·m·g·d = ${mu}·${masa}·${g}·${distancia_m} = ${roundInt(W)} J`);
+      if(deltaEk>0) detalleList.push(`ΔEk = ½·m·(v1²-v0²) = ${roundInt(deltaEk)} J`);
+      if(kcal_met !== null) detalleList.push(`Estimación METs (${met} MET, ${tiempo_min} min): ${roundInt(kcal_met)} kcal`);
+      if(perdida_percent>0) detalleList.push(`Aplicada pérdida adicional: ${roundInt(perdida_percent)}%`);
+
+      detalleList.push(`Energía mecánica total = ${roundInt(E_mec_J)} J = ${roundInt(E_mec_kcal)} kcal`);
+      detalleList.push(`Energía química requerida (η = ${eta}) = ${roundInt(req_chemical_J)} J = ${roundInt(req_kcal)} kcal`);
+      detalleList.push(`⟶ Conversión: 1 kcal = 4184 J`);
+
+      document.getElementById('detalle').innerText = detalleList.join('\n\n');
+
+      // tabla desglose
+      const total = Math.max(E_mec_J, 1);
+      document.getElementById('ep_j').innerText = Ep ? roundInt(Ep).toLocaleString() : '—';
+      document.getElementById('ep_kcal').innerText = Ep ? roundInt(JtoKcal(Ep)) : '—';
+      document.getElementById('ep_pct').innerText = Ep ? Math.round((Ep/total)*100) + '%' : '—';
+
+      document.getElementById('fr_j').innerText = W ? roundInt(W).toLocaleString() : '—';
+      document.getElementById('fr_kcal').innerText = W ? roundInt(JtoKcal(W)) : '—';
+      document.getElementById('fr_pct').innerText = W ? Math.round((W/total)*100) + '%' : '—';
+
+      document.getElementById('ek_j').innerText = deltaEk ? roundInt(deltaEk).toLocaleString() : '—';
+      document.getElementById('ek_kcal').innerText = deltaEk ? roundInt(JtoKcal(deltaEk)) : '—';
+      document.getElementById('ek_pct').innerText = deltaEk ? Math.round((deltaEk/total)*100) + '%' : '—';
+
+      document.getElementById('total_j').innerText = roundInt(E_mec_J).toLocaleString();
+      document.getElementById('total_kcal').innerText = roundInt(E_mec_kcal);
+
+      // equivalencia alimentaria con req_kcal
+      const alimento = document.getElementById('alimento').value || 'ninguno';
+      const alimentoMap = { 'banana_100':89, 'manzana_100':52, 'pan_100':265, 'pizza_100':266 };
+      let foodText = '—';
+      if(alimento && alimento !== 'ninguno' && alimentoMap[alimento]){
+        const itemKcal = alimentoMap[alimento];
+        const eq = req_kcal / itemKcal;
+        foodText = `${Math.round(eq)} porciones de 100 g ≈ ${roundInt(req_kcal)} kcal`;
+      } else {
+        foodText = `${roundInt(req_kcal)} kcal (req. química)`;
+      }
+      document.getElementById('food_equiv').innerText = foodText;
+
+      // Guardar resultado en ultimoCalculo
+      ultimoCalculo = {
+        timestamp: new Date().toISOString(),
+        tipo: tipoActividad || 'otro',
+        masa, eta, g,
+        Ep: roundInt(Ep),
+        W: roundInt(W),
+        deltaEk: roundInt(deltaEk),
+        E_mec_J: roundInt(E_mec_J),
+        E_mec_kcal: roundInt(E_mec_kcal),
+        req_kcal: roundInt(req_kcal),
+        pasos: detalleList.join('\n\n'),
+        kcal_met: kcal_met !== null ? roundInt(kcal_met) : null,
+        alimento: alimento || ''
+      };
+
+      return ultimoCalculo;
+    }
+
+    // ---------- REGISTROS ----------
+    function agregarRegistro(){
+      const res = calcularTodo();
+      if(!res) return alert('Realiza un cálculo primero.');
+      registros.push(res);
+      actualizarCharts();
+      alert('Registro guardado.');
+    }
+
+    function descargarCSV(){
+      if(!registros.length) return alert('No hay registros para descargar.');
+      const keys = Object.keys(registros[0]);
+      const csv = [keys.join(',')].concat(registros.map(r => keys.map(k => `"${String(r[k]||'')}"`).join(','))).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'registros_simulador.csv'; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // ---------- EJEMPLOS Y PRACTICAS ----------
+    function ejemploSubir3m(){
+      document.getElementById('masa').value = 70;
+      document.getElementById('altura_desplazada').value = 3;
+      document.getElementById('actividad').value = 'subir_escaleras';
+      document.getElementById('eficiencia').value = 0.25;
+      const res = calcularTodo();
+      document.getElementById('sol_example').innerText = res.pasos;
+    }
+
+    function generarPractica(){
+      const tipo = Math.random() < 0.5 ? 'escaleras' : 'caminar';
+      const m = Math.round((50 + Math.random()*40)*10)/10;
+      const eta = Math.round((0.2 + Math.random()*0.15)*100)/100;
+      if(tipo === 'escaleras'){
+        const h = Math.round((1 + Math.random()*8)*100)/100;
+        currentPractice = { tipo, m, h, eta };
+        document.getElementById('practice_area').innerText = `Problema: Persona de ${m} kg sube ${h} m. Eficiencia estimada η=${eta}. ¿Cuántas kcal de energía química necesita aproximadamente?`;
+      } else {
+        const d = Math.round((100 + Math.random()*4900));
+        const mu = Math.round((0.02 + Math.random()*0.08)*1000)/1000;
+        currentPractice = { tipo, m, d, mu, eta };
+        document.getElementById('practice_area').innerText = `Problema: Persona de ${m} kg camina ${d} m. μ=${mu}, η=${eta}. ¿Cuántas kcal de energía química necesita aproximadamente?`;
+      }
+      document.getElementById('practice_answer').value = '';
+      document.getElementById('practice_feedback').innerText = '';
+    }
+
+    function comprobarPractica(){
+      if(!currentPractice) return alert('Genera primero una práctica.');
+      let correct = 0;
+      if(currentPractice.tipo === 'escaleras'){
+        const Ep = currentPractice.m * 9.81 * currentPractice.h;
+        correct = JtoKcal(Ep / currentPractice.eta);
+      } else {
+        const W = currentPractice.mu * currentPractice.m * 9.81 * currentPractice.d;
+        correct = JtoKcal(W / currentPractice.eta);
+      }
+      const user = safeNum(document.getElementById('practice_answer').value, NaN);
+      if(isNaN(user)) return alert('Introduce un número como respuesta.');
+      const rel = Math.abs(user - correct) / (correct || 1);
+      let feedback = '';
+      if(rel < 0.05) feedback = `¡Perfecto! Dentro del 5% (valor referencia ${roundInt(correct)} kcal).`;
+      else if(rel < 0.15) feedback = `Bien — dentro del 15% (ref ${roundInt(correct)} kcal).`;
+      else feedback = `Resultado lejos del estimado. Valor de referencia: ${roundInt(correct)} kcal.`;
+      document.getElementById('practice_feedback').innerText = feedback;
+    }
+
+    function mostrarSolPractica(){
+      if(!currentPractice) return alert('Genera primero una práctica.');
+      let msg = '';
+      if(currentPractice.tipo === 'escaleras'){
+        const Ep = currentPractice.m * 9.81 * currentPractice.h;
+        const req = JtoKcal(Ep / currentPractice.eta);
+        msg = `1) Ep = m·g·h = ${currentPractice.m}·9.81·${currentPractice.h} = ${roundInt(Ep)} J\n2) Energía química requerida: Ep/η = ${roundInt(Ep/currentPractice.eta)} J → ${roundInt(req)} kcal.`;
+      } else {
+        const W = currentPractice.mu * currentPractice.m * 9.81 * currentPractice.d;
+        const req = JtoKcal(W / currentPractice.eta);
+        msg = `1) W = μ·m·g·d = ${currentPractice.mu}·${currentPractice.m}·9.81·${currentPractice.d} = ${roundInt(W)} J\n2) Energía química: W/η = ${roundInt(W/currentPractice.eta)} J → ${roundInt(req)} kcal.`;
+      }
+      document.getElementById('practice_feedback').innerText = msg;
+    }
+
+    // ---------- EXPORTAR PDF ----------
+    async function exportPDF(){
+      const docTitle = document.getElementById('nombre').value || 'Sebastián';
+      const container = document.createElement('div');
+      container.style.padding = '20px';
+      container.style.width = '1200px';
+      container.style.background = '#ffffff';
+      container.innerHTML = `<h1 style="color:${getComputedStyle(document.documentElement).getPropertyValue('--accent')}; margin:0">${docTitle} — Informe Simulador Energético</h1>
+        <div style="font-size:12px;color:#334155;margin-top:8px"><strong>Fecha:</strong> ${new Date().toLocaleString()}</div>
+        <hr style="margin:12px 0 18px 0;border:none;height:1px;background:#eee">`;
+
+      if(ultimoCalculo) container.innerHTML += `<h3>Resumen cálculo reciente</h3><pre style="white-space:pre-wrap;background:#fbfbff;padding:12px;border-radius:6px">${ultimoCalculo.pasos}</pre>`;
+      else container.innerHTML += `<div style="font-size:13px;color:#334155">No hay cálculo reciente.</div>`;
+
+      try {
+        const lineImg = lineChart.toBase64Image();
+        const barImg = barChart.toBase64Image();
+        const actImg = activityChart.toBase64Image();
+        container.innerHTML += `<h3 style="margin-top:12px">Gasto acumulado</h3><img src="${lineImg}" style="width:100%;border:1px solid #eee"/><h3 style="margin-top:12px">Desglose</h3><img src="${barImg}" style="width:100%;border:1px solid #eee"/><h3 style="margin-top:12px">Promedio por actividad</h3><img src="${actImg}" style="width:100%;border:1px solid #eee"/>`;
+      } catch(e){ console.warn('Error al capturar gráficas', e); }
+
+      if(registros.length){
+        container.innerHTML += `<h3 style="margin-top:12px">Últimos registros</h3>`;
+        registros.slice(-20).reverse().forEach((r,i)=> {
+          container.innerHTML += `<div style="border-top:1px dashed #eee;padding-top:8px;margin-top:8px"><strong>${i+1}. ${r.tipo}</strong> — ${r.req_kcal} kcal — Fecha: ${r.timestamp}<div style="font-size:12px;color:#334155;margin-top:6px">${(r.pasos||'').substring(0,250)}${(r.pasos&&r.pasos.length>250)?'...':''}</div></div>`;
+        });
+      }
+
+      const canvas = await html2canvas(container, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgWidth = pageWidth - 20;
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+      pdf.save(`${docTitle}_informe.pdf`);
+    }
+
+    // ---------- PRESETS / REGISTRO MASIVO ----------
+    function preset(tipo){
+      const masa = 70;
+      document.getElementById('masa').value = masa;
+      document.getElementById('eficiencia').value = 0.25;
+      document.getElementById('coef_fr').value = 0.04;
+      document.getElementById('g').value = 9.81;
+
+      if(tipo==='caminar'){
+        document.getElementById('actividad').value = 'caminar';
+        document.getElementById('tiempo').value = 30;
+        document.getElementById('distancia').value = 3000;
+        document.getElementById('altura_desplazada').value = 0;
+      } else if(tipo==='correr'){
+        document.getElementById('actividad').value = 'correr';
+        document.getElementById('tiempo').value = 20;
+        document.getElementById('distancia').value = 4000;
+        document.getElementById('altura_desplazada').value = 0;
+      } else if(tipo==='bicicleta'){
+        document.getElementById('actividad').value = 'bicicleta';
+        document.getElementById('tiempo').value = 40;
+        document.getElementById('distancia').value = 8000;
+        document.getElementById('altura_desplazada').value = 0;
+      } else if(tipo==='subir'){
+        document.getElementById('actividad').value = 'subir_escaleras';
+        document.getElementById('altura_desplazada').value = 3;
+        document.getElementById('distancia').value = 0;
+        document.getElementById('tiempo').value = 2;
+      } else if(tipo==='yoga'){
+        document.getElementById('actividad').value = 'otro';
+        document.getElementById('tiempo').value = 45;
+        document.getElementById('distancia').value = 0;
+      } else if(tipo==='pesas'){
+        document.getElementById('actividad').value = 'otro';
+        document.getElementById('tiempo').value = 15;
+        document.getElementById('distancia').value = 0;
+      } else if(tipo==='sentadillas'){
+        document.getElementById('actividad').value = 'otro';
+        document.getElementById('tiempo').value = 5;
+        document.getElementById('distancia').value = 0;
+        document.getElementById('altura_desplazada').value = 0.4;
+      } else if(tipo==='reiniciar'){
+        document.getElementById('mainForm').reset();
+        document.getElementById('detalle').innerText = '';
+        document.getElementById('display_eficiencia').innerText = '—';
+        document.getElementById('display_E_mec').innerText = '—';
+        document.getElementById('display_req_kcal').innerText = '—';
+      }
+
+      calcularTodo();
+    }
+
+    function registrarTodos(){
+      const examples = [
+        { tipo:'Caminar 30 min', preset:'caminar' },
+        { tipo:'Correr 20 min', preset:'correr' },
+        { tipo:'Bicicleta 40 min', preset:'bicicleta' },
+        { tipo:'Subir escaleras 3 m', preset:'subir' },
+        { tipo:'Yoga 45 min', preset:'yoga' },
+        { tipo:'Pesas 15 min', preset:'pesas' },
+        { tipo:'Sentadillas 5 min', preset:'sentadillas' }
+      ];
+
+      let i = 0;
+      (function next(){
+        if(i >= examples.length){ actualizarCharts(); alert('Todos los ejemplos fueron registrados.'); return; }
+        preset(examples[i].preset);
+        const res = calcularTodo();
+        res.tipo = examples[i].tipo; // nombre legible
+        registros.push(res);
+        i++;
+        setTimeout(next, 180);
+      })();
+    }
+
+    // ---------- LOCAL STORAGE ----------
+    function guardarLocal(){ localStorage.setItem('sim_registros_final', JSON.stringify(registros)); alert('Historial guardado en localStorage.'); }
+    function cargarLocal(){ registros = JSON.parse(localStorage.getItem('sim_registros_final') || '[]'); actualizarCharts(); alert('Historial cargado.'); }
+    function borrarLocal(){ if(!confirm('¿Borrar historial local?')) return; localStorage.removeItem('sim_registros_final'); registros = []; actualizarCharts(); alert('Historial borrado.'); }
+
+    // ---------- UTIL / INIT ----------
+    document.addEventListener('DOMContentLoaded', () => {
+      initCharts();
+      // valores por defecto
+      document.getElementById('masa').value = 70;
+      document.getElementById('eficiencia').value = 0.25;
+      document.getElementById('coef_fr').value = 0.04;
+      document.getElementById('g').value = 9.81;
+      document.getElementById('tiempo').value = 40;
+      document.getElementById('distancia').value = 10000;
+      document.getElementById('nombre').value = 'Sebastián';
+      actualizarCharts();
+
+      // validación visual pequeña
+      ['masa','eficiencia','g'].forEach(id=>{
+        const el = document.getElementById(id);
+        el.addEventListener('input', ()=> {
+          const v = safeNum(el.value, NaN);
+          if(isNaN(v) || v <= 0) { el.style.boxShadow='0 0 0 4px rgba(239,68,68,0.06)'; }
+          else { el.style.boxShadow='0 0 0 4px rgba(34,197,94,0.06)'; }
+        });
+      });
+
+      // Responsive: adjust chart heights on resize
+      window.addEventListener('resize', ()=>{
+        document.querySelectorAll('.chart-container').forEach((c,i)=>{
+          if(window.innerWidth > 900) c.style.height = i===2 ? '240px' : '180px';
+          else c.style.height = '220px';
+        });
+        if(lineChart) lineChart.resize();
+        if(barChart) barChart.resize();
+        if(activityChart) activityChart.resize();
+      });
+    });
+  </script>
+</body>
+</html>
